@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chiang Mai Treasure Hunt (20 จุด)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; font-family: 'Sarabun', sans-serif; background: #2c3e50; }
+        #map { height: 100vh; width: 100%; cursor: crosshair; }
+        
+        /* ป้ายคะแนนด้านบน */
+        #ui {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: rgba(255,255,255,0.95); padding: 10px 25px;
+            border-radius: 30px; border: 3px solid #e67e22; text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); min-width: 260px;
+        }
+        
+        /* Animation การสั่น */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            50% { transform: translate(-1px, -2px) rotate(-1deg); }
+            100% { transform: translate(1px, -1px) rotate(1deg); }
+        }
+        .shaking { animation: shake 0.3s; }
+
+        /* ไอคอน */
+        .rock-icon { font-size: 30px; text-align: center; cursor: pointer; transition: transform 0.1s; }
+        .rock-icon:active { transform: scale(0.9); }
+        .found-icon { font-size: 35px; text-align: center; filter: drop-shadow(0 0 5px gold); }
+
+        /* กล่องข้อมูล Popup */
+        .popup-card { text-align: center; width: 200px; }
+        .popup-card h3 { margin: 5px 0; color: #d35400; font-size: 16px; }
+        .popup-card img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin: 5px 0; border: 1px solid #ddd; }
+        .item-box { background: #f1c40f; padding: 5px; border-radius: 5px; font-weight: bold; font-size: 14px; margin-top: 5px; }
+
+        /* --- [ส่วนที่เพิ่มใหม่ 1] CSS สำหรับปุ่มนำทางและคูปอง --- */
+        .coupon-ticket {
+            background: #ff7675; color: white; padding: 5px; 
+            border-radius: 5px; margin-top: 5px; font-size: 13px; font-weight: bold;
+            border: 2px dashed white; animation: shake 0.5s;
+        }
+        .btn-nav {
+            display: block; background: #2ecc71; color: white !important;
+            text-decoration: none; padding: 6px; border-radius: 20px;
+            margin-top: 8px; font-weight: bold; font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .btn-nav:hover { background: #27ae60; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h2 style="margin:0; font-size:18px; color:#333;">🗺️ ภารกิจล่าสถานที่ท่องเที่ยวจังหวัดเชียงใหม่</h2>
+        <div style="font-size:16px; margin-top:5px;">
+            เจอแล้ว: <span id="score" style="color:#d35400; font-weight:bold; font-size:20px;">0</span> / 20 แห่ง
+        </div>
+        <small style="color:gray;">(คลิกที่ภูเขาเพื่อขุด!)</small>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. ตั้งค่าแผนที่ (Zoom ออกมาให้เห็นทั้งจังหวัด)
+        var map = L.map('map').setView([18.8800, 99.0000], 9);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        // --- [ส่วนที่เพิ่มใหม่ 2] ฟังก์ชันสุ่มคูปอง (โอกาส 30%) ---
+        function getRandomCoupon() {
+            if (Math.random() < 0.3) { 
+                var coupons = ["ลด 50% ร้านกาแฟ", "เข้าชมฟรี 1 ท่าน", "รับของที่ระลึกฟรี", "ซื้อ 1 แถม 1"];
+                return coupons[Math.floor(Math.random() * coupons.length)];
+            }
+            return null;
+        }
+
+        // 2. ข้อมูล 20 สถานที่
+        var locations = [
+            // 🏯 สายวัด & วัฒนธรรม
+            { name: "วัดพระธาตุดอยสุเทพ", lat: 18.8049, lng: 98.9216, hp: 5, icon: "🛕", item: "ระฆังทองคำ", img: "https://www.agoda.com/wp-content/uploads/2020/01/Doi-Suthep-Temple-comfy-stay-in-Chiang-Mai-Thailand-homestays.jpg" },
+            { name: "วัดพระสิงห์", lat: 18.7887, lng: 98.9818, hp: 3, icon: "🙏", item: "พระพุทธสิหิงค์จำลอง", img: "https://tse1.mm.bing.net/th/id/OIP.zgoqUADrMCkGgZDmiSyvlAHaFj?rs=1&pid=ImgDetMain&o=7&rm=3" },
+            { name: "วัดอุโมงค์", lat: 18.7834, lng: 98.9515, hp: 4, icon: "🕯️", item: "ตะเกียงโบราณ", img: "https://tse3.mm.bing.net/th/id/OIP.tuMfgNbAJbkF8yCQj9zXegHaEK?rs=1&pid=ImgDetMain&o=7&rm=3" },
+            { name: "วัดเจ็ดยอด", lat: 18.8080, lng: 98.9723, hp: 4, icon: "🧱", item: "ศิลาจารึก", img: "https://palanla.com/ckeditor/upload/files/id37/domestic_location/Chet%20Yot%20Temple/009.jpg" },
+            { name: "วัดพระธาตุดอยคำ", lat: 18.7597, lng: 98.9186, hp: 3, icon: "🌼", item: "พวงกุญเเจดอกมะลิ", img: "https://th.bing.com/th/id/R.af349b8c8d1f53d981d7b71d0cbfec2a?rik=Y50u0x7A3iPUUw&pid=ImgRaw&r=0" },
+
+            // 🌿 สายธรรมชาติ & ภูเขา
+            { name: "ดอยอินทนนท์", lat: 18.5885, lng: 98.4870, hp: 8, icon: "🥶", item: "เสื้อกันหนาว", img: "https://image-tc.galaxy.tf/wijpeg-sxrfid5inslt46adwg0pwpho/intanon_standard.jpg?crop=112%2C0%2C1777%2C1333" },
+            { name: "ม่อนแจ่ม", lat: 18.9356, lng: 98.8225, hp: 4, icon: "🍓", item: "สตรอเบอร์รี่", img: "https://s359.kapook.com/pagebuilder/440157a0-df99-4516-a283-529dd561a32a.jpg" },
+            { name: "ดอยหลวงเชียงดาว", lat: 19.3956, lng: 98.8524, hp: 6, icon: "✨", item: "หินดวงดาว", img: "https://resource.nationtv.tv/uploads/images/contents/w1024/2021/10/DJ4WKwkDyEVUESs05hpB.jpg" },
+            { name: "บ้านป่าบงเปียง", lat: 18.5303, lng: 98.4418, hp: 5, icon: "🌾", item: "ข้าวสาร", img: "https://www.tripgether.com/wp-content/uploads/tripgetter/nampu_2.jpg" },
+            { name: "หมู่บ้านแม่กำปอง", lat: 18.8656, lng: 99.3506, hp: 4, icon: "🏡", item: "ใบชาหมัก", img: "https://www.hashcorner.com/wp-content/uploads/2020/11/Mae-Kampong-Chiang-Mai-02-560x373.jpg" },
+            { name: "ผาช่อ", lat: 18.5147, lng: 98.7424, hp: 5, icon: "🏜️", item: "โมเดลฟอสซิล", img: "https://www.gooutthailand.com/wp-content/uploads/2022/09/phachor-2.jpg" },
+            { name: "น้ำตกบัวตอง", lat: 19.0719, lng: 99.0664, hp: 5, icon: "🧗", item: "อุปกรณ์ปีนผา", img: "https://dynamic-media-cdn.tripadvisor.com/media/photo-o/11/e2/f5/56/beautiful-relatively.jpg?w=1200&h=1200&s=1" },
+            { name: "สวนพฤกษศาสตร์ฯ", lat: 18.8988, lng: 98.8604, hp: 4, icon: "🌵", item: "กระบองเพชร", img: "https://th.bing.com/th/id/R.aa0ec4e69b071fcce2bf5a6740f113b2?rik=k91hxxnl3fvTEw&pid=ImgRaw&r=0" },
+
+            // 🏙️ สายเมือง & เช็คอิน
+            { name: "ประตูท่าแพ", lat: 18.7876, lng: 98.9931, hp: 3, icon: "🧱", item: "อาหารนกฟรี", img: "https://th.bing.com/th/id/R.bca8615f2433b37aa619a815fc57a796?rik=H%2fnbPyo4osUTig&pid=ImgRaw&r=0" },
+            { name: "นิมมานเหมินทร์", lat: 18.7992, lng: 98.9684, hp: 3, icon: "☕", item: "ลาเต้ร้อน", img: "https://palanla.com/upload/dms/real/pic-202317011673975455_31698.jpg" },
+            { name: "One Nimman", lat: 18.8005, lng: 98.9678, hp: 3, icon: "🏰", item: "รูปถ่ายชิคๆ", img: "https://tse3.mm.bing.net/th/id/OIP.EnrFQqVA2F0RPZEmSkHxXwHaFj?rs=1&pid=ImgDetMain&o=7&rm=3" },
+            { name: "ตลาดวโรรส", lat: 18.7905, lng: 99.0003, hp: 3, icon: "🌭", item: "ไส้อั่ว", img: "https://cms.dmpcdn.com/travel/2021/03/16/4b792e80-860a-11eb-984e-8b6bf9610d82_original.jpg" },
+            { name: "ถนนคนเดินท่าแพ", lat: 18.7879, lng: 98.9890, hp: 3, icon: "👕", item: "เสื้อพื้นเมือง", img: "https://img.wongnai.com/p/1920x0/2018/11/14/d3d257b5f36e4c09bb043000841ada15.jpg" },
+
+            // 🐘 ครอบครัว
+            { name: "เชียงใหม่ไนท์ซาฟารี", lat: 18.7432, lng: 98.9167, hp: 4, icon: "🦁", item: "ตุ๊กตาสิงโต", img: "https://res.klook.com/images/fl_lossy.progressive,q_65/c_fill,w_1295,h_720,f_auto/w_80,x_15,y_15,g_south_west,l_klook_water/activities/rpm0ddqzv73yxhjiszps/%E0%B8%9A%E0%B8%B1%E0%B8%95%E0%B8%A3%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%8A%E0%B8%A1%E0%B9%80%E0%B8%8A%E0%B8%B5%E0%B8%A2%E0%B8%87%E0%B9%83%E0%B8%AB%E0%B8%A1%E0%B9%88%E0%B9%84%E0%B8%99%E0%B8%97%E0%B9%8C%E0%B8%8B%E0%B8%B2%E0%B8%9F%E0%B8%B2%E0%B8%A3%E0%B8%B5(ChiangMaiNightSafari)%E0%B8%AA%E0%B8%B3%E0%B8%AB%E0%B8%A3%E0%B8%B1%E0%B8%9A%E0%B8%9C%E0%B8%B9%E0%B9%89%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%8A%E0%B8%A1%E0%B8%8A%E0%B8%B2%E0%B8%A7%E0%B9%84%E0%B8%97%E0%B8%A2.jpg" },
+            { name: "อุทยานหลวงราชพฤกษ์", lat: 18.7303, lng: 98.9248, hp: 4, icon: "🌺", item: "ดอกกล้วยไม้", img: "https://faceticket.net/wp-content/uploads/2019/04/royal_1400x794_acf_cropped-1.jpg" }
+        ];
+
+        var foundCount = 0;
+
+        locations.forEach(spot => {
+            // สร้างไอคอนภูเขา
+            var rockIcon = L.divIcon({
+                className: 'rock-icon',
+                html: '⛰️',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+
+            var marker = L.marker([spot.lat, spot.lng], {icon: rockIcon}).addTo(map);
+            var hp = spot.hp;
+            var isFound = false;
+
+            marker.on('click', function() {
+                if(isFound) return;
+                
+                hp--;
+                // สั่งให้สั่น
+                var el = marker.getElement();
+                el.classList.add('shaking');
+                setTimeout(() => el.classList.remove('shaking'), 300);
+
+                if(hp > 0) {
+                    marker.bindPopup(`<div style="text-align:center"><b>🔨 กำลังขุด...</b><br>เหลืออีก ${hp} ครั้ง</div>`).openPopup();
+                } else {
+                    // ขุดเจอ!
+                    isFound = true;
+                    foundCount++;
+                    document.getElementById('score').innerText = foundCount;
+
+                    // เปลี่ยนไอคอน
+                    var foundIcon = L.divIcon({
+                        className: 'found-icon',
+                        html: spot.icon,
+                        iconSize: [40, 40]
+                    });
+                    marker.setIcon(foundIcon);
+
+                    // --- [ส่วนที่เพิ่มใหม่ 3] สร้าง HTML คูปองและปุ่มนำทาง ---
+                    var couponHtml = "";
+                    var myCoupon = getRandomCoupon();
+                    if(myCoupon) {
+                        couponHtml = `<div class="coupon-ticket">🎟️ ยินดีด้วย! ${myCoupon}</div>`;
+                    }
+
+                    // แสดงของรางวัล
+                    var content = `
+                        <div class="popup-card">
+                            <h3>${spot.name}</h3>
+                            <img src="${spot.img}" onerror="this.src='https://via.placeholder.com/200'">
+                            <div class="item-box">
+                                ✨ ได้รับ: ${spot.item}
+                            </div>
+                            
+                            ${couponHtml}
+
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lng}" 
+                               target="_blank" class="btn-nav">
+                               🚗 นำทางไปที่นี่
+                            </a>
+                        </div>
+                    `;
+                    marker.bindPopup(content).openPopup();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
